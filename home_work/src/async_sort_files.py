@@ -40,7 +40,7 @@ def logger_config(level: str, name: str) -> logging.Logger:
 
 async def copy_file(file: AsyncPath, adest: AsyncPath) -> None:
 
-    logging_cf = logger_config("INFO", "copy_file")
+    logging_cf = logger_config("ERROR", "copy_file")
     try:
         if await file.is_file():
 
