@@ -5,7 +5,12 @@ import argparse
 import logging
 
 
-SORT_FOLDERS = {'images', 'videos', 'audio', 'documents', 'archives', 'others'}
+SORT_FOLDERS = {'images': ('.jpeg', '.png', '.jpg', '.svg', '.tif', '.webp'),
+                'videos': ('.mp4', '.avi', '.mov', '.mkv'),
+                'audio': ('.mp3', '.wav', '.flac'),
+                'documents': ('.pdf', '.docx', '.txt', '.xlsx', '.pptx', '.doc'),
+                'archives': ('.zip', '.tar', '.tar.gz', '.tar.bz2', '.tar.xz')
+                }
 
 
 def logger_config(level: str, name: str) -> logging.Logger:
@@ -27,64 +32,57 @@ def logger_config(level: str, name: str) -> logging.Logger:
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     ch.setFormatter(formatter)
-    logger.addHandler(ch)
+    if not logger.hasHandlers():
+        logger.addHandler(ch)
 
     return logger
 
 
-async def copy_file(file: AsyncPath, apath: AsyncPath) -> None:
+async def copy_file(file: AsyncPath, adest: AsyncPath) -> None:
 
     logging_cf = logger_config("INFO", "copy_file")
     try:
         if await file.is_file():
 
-            if file.suffix.lower() in ('.jpeg', '.png', '.jpg', '.svg', '.tif', 'webp'):
-                await copyfile(file, apath / 'images' / file.name)
-                logging_cf.info(f"Copied {file.name} to {apath / 'images'}")
+            if file.suffix.lower() in SORT_FOLDERS['images']:
+                await copyfile(file, adest / 'images' / file.name)
 
-            elif file.suffix.lower() in ('.mp4', '.avi', '.mov', '.mkv'):
-                await copyfile(file, apath / 'videos' / file.name)
-                logging_cf.info(f"Copied {file.name} to {apath / 'videos'}")
+            elif file.suffix.lower() in SORT_FOLDERS['videos']:
+                await copyfile(file, adest / 'videos' / file.name)
 
-            elif file.suffix.lower() in ('.mp3', '.wav', '.flac'):
-                await copyfile(file, apath / 'audio' / file.name)
-                logging_cf.info(f"Copied {file.name} to {apath / 'audio'}")
+            elif file.suffix.lower() in SORT_FOLDERS['audio']:
+                await copyfile(file, adest / 'audio' / file.name)
 
-            elif file.suffix.lower() in ('.pdf', '.docx', '.txt'):
-                await copyfile(file, apath / 'documents' / file.name)
-                logging_cf.info(
-                    f"Copied {file.name} to {apath / 'documents'}")
+            elif file.suffix.lower() in SORT_FOLDERS['documents']:
+                await copyfile(file, adest / 'documents' / file.name)
 
-            elif file.suffix.lower() in ('.zip', '.tar', '.tar.gz', '.tar.bz2', '.tar.xz'):
-                unpack_dir = apath / 'archives' / file.stem
+            elif file.suffix.lower() in SORT_FOLDERS['archives']:
+                unpack_dir = adest / 'archives' / file.stem
                 await unpack_archive(str(file), str(unpack_dir))
-                logging_cf.info(f"Unpacked {file.name} to {unpack_dir}")
 
             else:
-                await copyfile(file, apath / 'others' / file.name)
-                logging_cf.info(f"Copied {file.name} to {apath / 'others'}")
+                await copyfile(file, adest / 'others' / file.name)
 
         elif await file.is_dir():
 
-            if file.name not in SORT_FOLDERS:
+            if file.name not in list(SORT_FOLDERS.keys()) + ['others']:
+                await read_folder(file, adest)
 
-                new_path = apath / file.name
-                await read_folder(new_path)
     except Exception as e:
         logging_cf.error(f"Error while copying {file.name}: {e}")
 
 
-async def read_folder(apath: AsyncPath) -> str:
+async def read_folder(apath: AsyncPath, adest: AsyncPath) -> str:
 
     try:
-        for folder in SORT_FOLDERS:
-            await (apath / folder).mkdir(exist_ok=True, parents=True)
+        for folder in list(SORT_FOLDERS.keys()) + ['others']:
+            await (adest / folder).mkdir(exist_ok=True, parents=True)
 
         async for file in apath.iterdir():
 
-            await copy_file(file, apath)
+            await copy_file(file, adest)
 
-        return f"All files from {apath} have been copied to the appropriate folders."
+        return f"All files from {apath} have been copied to the {adest}."
 
     except Exception as e:
         logging_error = logger_config("ERROR", "read_folder")
@@ -97,15 +95,27 @@ async def main():
 
     parser = argparse.ArgumentParser(description="Async file sorter")
     parser.add_argument("source", help="Path to the source folder")
+    parser.add_argument("output", nargs='?', default='./sorted_files',
+                        help="Path to the output folder")
+
     args = parser.parse_args()
 
     apath = AsyncPath(args.source)
+    adest = AsyncPath(args.output)
+    abs_adest = await adest.absolute()
 
     if not await apath.exists():
         logging_info.error(f"Path {apath} does not exist.")
         return
 
-    logging_info.info(await read_folder(apath))
+    if not await adest.exists():
+        await adest.mkdir(parents=True, exist_ok=True)
+        logging_info.info(f"Output folder {abs_adest} created.")
+
+    logging_info.info(await read_folder(apath, adest))
+
+    logging_info.info(f"Source folder {apath}")
+    logging_info.info(f"Destination folder {abs_adest}")
 
 
 if __name__ == "__main__":
